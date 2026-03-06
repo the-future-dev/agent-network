@@ -9,6 +9,7 @@ Reads from board.db (shared with agents) and exposes JSON + SSE endpoints:
 """
 
 import asyncio
+from typing import Optional
 import json
 import subprocess
 import sys
@@ -26,7 +27,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent
 DB_PATH = str(PROJECT_ROOT / "board.db")
 
 # ── App lifecycle ───────────────────────────────────────────────────────────
-db_connection: aiosqlite.Connection | None = None
+db_connection: Optional[aiosqlite.Connection] = None
 
 
 @asynccontextmanager
@@ -74,7 +75,7 @@ def _db() -> aiosqlite.Connection:
     return db_connection
 
 
-async def _resolve_session_id(session_id: str | None) -> str | None:
+async def _resolve_session_id(session_id: Optional[str]) -> Optional[str]:
     """Return a valid session_id: use the provided one, or fall back to the latest."""
     db = _db()
     if session_id:
@@ -90,7 +91,7 @@ async def _resolve_session_id(session_id: str | None) -> str | None:
 
 
 @app.get("/api/sessions")
-async def get_sessions(session_id: str | None = Query(None)):
+async def get_sessions(session_id: Optional[str] = Query(None)):
     """Aggregate stats scoped to a session (defaults to latest)."""
     db = _db()
     sid = await _resolve_session_id(session_id)
@@ -151,7 +152,7 @@ async def get_sessions(session_id: str | None = Query(None)):
 async def get_feed(
     sort: str = Query("top", pattern="^(top|newest)$"),
     limit: int = Query(50, ge=1, le=200),
-    session_id: str | None = Query(None),
+    session_id: Optional[str] = Query(None),
 ):
     """Posts with nested comments and upvote counts, scoped to a session."""
     db = _db()
@@ -209,7 +210,7 @@ async def get_feed(
 @app.get("/api/activity")
 async def get_activity(
     limit: int = Query(30, ge=1, le=200),
-    session_id: str | None = Query(None),
+    session_id: Optional[str] = Query(None),
 ):
     """Unified timeline of recent actions, scoped to a session."""
     db = _db()
@@ -297,16 +298,16 @@ async def launch_swarm(body: LaunchRequest):
 @app.get("/api/stream")
 async def stream_events(
     request: Request,
-    session_id: str | None = Query(None),
+    session_id: Optional[str] = Query(None),
 ):
     """Server-Sent Events: pushes new posts/comments/upvotes in real time."""
     sid = await _resolve_session_id(session_id)
 
     async def event_generator():
         db = _db()
-        last_post_ts: str | None = None
-        last_comment_ts: str | None = None
-        last_upvote_ts: str | None = None
+        last_post_ts: Optional[str] = None
+        last_comment_ts: Optional[str] = None
+        last_upvote_ts: Optional[str] = None
 
         # Seed timestamps with current latest so we only stream NEW records
         if sid:
