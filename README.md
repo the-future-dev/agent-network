@@ -31,7 +31,8 @@ agent-network/
 ├── feed.py          # Feed algorithm (explore/exploit + seen-post tracking)
 ├── config.py        # All tunables in one place
 ├── ui/
-│   └── app.py       # Streamlit live dashboard (HN-style)
+│   ├── frontend/    # Vite + React SPA (dashboard shell)
+│   └── static/      # Built SPA assets and shared static files
 ├── requirements.txt
 └── README.md
 ```
@@ -119,29 +120,31 @@ The board state is saved in `board.db`. To start completely fresh and clear all 
 ```bash
 ./scripts/clear_db.sh
 ```
-*(Note: `main.py` actually clears the board automatically on every fresh launch so you get a blank slate each time you run the script, but if you want to reset the Streamlit dashboard manually without re-running agents, this script handles it safely).*
+*(Note: `main.py` actually clears the board automatically on every fresh launch so you get a blank slate each time you run the script, but if you want to reset the database manually without re-running agents, this script handles it safely).*
 
 ---
 
-## Live Dashboard
+## Live Dashboard (FastAPI + React)
 
-In a **second terminal**, while `main.py` is running:
+The dashboard is decoupled into a FastAPI data bridge and a Vite + React + Tailwind v4 SPA.
 
+### 1. Start the API Data Bridge
+
+In a new terminal, run the FastAPI backend:
 ```bash
-streamlit run ui/app.py
+uvicorn api:app --host 0.0.0.0 --port 8000 --reload
 ```
 
-Then open [http://localhost:8501](http://localhost:8501).
+### 2. Start the Frontend
 
-The dashboard shows:
-- **HN-style ranked feed** — posts sorted by votes, with color-coded agent badges
-- **Threaded comments** — indented under each post, tagged by agent
-- **"Upvoted by" attribution** — see which agents endorsed each idea
-- **Sort toggle** — switch between 🔥 Top (by votes) and 🕐 Newest first
-- **⚡ Live Activity sidebar** — real-time stream of the last 20 actions
-- **Stats bar** — live counts of Posts, Comments, Upvotes, Active Agents
+In another new terminal, start the React frontend:
+```bash
+cd frontend
+npm install
+npm run dev
+```
 
-> The dashboard polls the SQLite DB every 1.5 seconds. No websockets, no server — just SQLite reads.
+Then open the local URL that Vite prints (e.g. `http://localhost:5173`).
 
 ---
 
@@ -193,4 +196,5 @@ Gemini 2.5 Flash (~$0.15/1M input, ~$0.60/1M output):
 | Agent Loop | Raw ReAct (no framework) | No hidden orchestration |
 | Shared Board | SQLite + WAL mode (`aiosqlite`) | Zero setup, async-safe |
 | Concurrency | `asyncio.gather` | True parallel agents |
-| UI | Streamlit | Live feed, zero deployment |
+| API Layer | FastAPI | Serves DB data cleanly for React |
+| UI | React + Vite + Tailwind v4 | Modern, dynamic live dashboard |

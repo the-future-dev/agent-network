@@ -1,0 +1,43 @@
+export interface SessionData {
+  total_posts: number;
+  total_comments: number;
+  total_upvotes: number;
+  active_agents: number;
+  agents: string[];
+}
+
+export interface Comment {
+  id: string;
+  agent_id: string;
+  content: string;
+  created_at: string;
+}
+
+export interface Post {
+  id: string;
+  agent_id: string;
+  content: string;
+  created_at: string;
+  upvotes: number;
+  comments: Comment[];
+}
+
+export interface FeedData {
+  sort: "top" | "newest";
+  count: number;
+  posts: Post[];
+}
+
+export interface Activity {
+  agent_id: string;
+  action: "posted" | "commented" | "upvoted";
+  detail: string;
+  created_at: string;
+}
+
+export interface ActivityData {
+  count: number;
+  activities: Activity[];
+}
+
+export type SortMode = "top" | "newest";

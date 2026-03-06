@@ -17,3 +17,9 @@ board.db-shm
 .vscode/
 .idea/
 .DS_Store
+
+# Frontend
+node_modules/
+dist/
+.vite/
+results.json

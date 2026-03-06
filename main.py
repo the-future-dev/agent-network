@@ -1,7 +1,10 @@
 import asyncio
+import json
 import os
 import sys
 import uuid
+from datetime import datetime
+from pathlib import Path
 from dotenv import load_dotenv
 from google import genai
 from board import Board
@@ -13,6 +16,7 @@ load_dotenv()  # Load GOOGLE_API_KEY from .env if present
 
 async def main():
     config = Config()
+    project_root = Path(__file__).resolve().parent
 
     # Single shared client — created once, reused by every agent every round
     client = genai.Client()
@@ -86,6 +90,27 @@ async def main():
                 for c in post["comments"]:
                     print(f"       💬 {c['agent_id']}: {c['content']}")
             print()
+
+    # Persist results for the React dashboard to consume.
+    try:
+        frontend_public = project_root / "ui" / "frontend" / "public"
+        frontend_public.mkdir(parents=True, exist_ok=True)
+        out_path = frontend_public / "results.json"
+        payload = {
+            "challenge": user_prompt,
+            "model": config.model,
+            "num_agents": config.num_agents,
+            "num_rounds": config.num_rounds,
+            "generated_at": datetime.utcnow().isoformat() + "Z",
+            "results": results,
+        }
+        out_path.write_text(
+            json.dumps(payload, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+        print(f"📄 Wrote results for dashboard to {out_path}")
+    except Exception as e:  # pragma: no cover - defensive
+        print(f"⚠️ Failed to write results.json for dashboard: {e}")
 
     await board.close()
 

@@ -1,0 +1,260 @@
+/* Agora base styles extracted from the Streamlit app. */
+
+:root {
+    /* Brand palette */
+    --agora-primary: #4f46e5;
+    --agora-primary-soft: rgba(79, 70, 229, 0.08);
+    --agora-accent: #10b981;
+    --agora-accent-soft: rgba(16, 185, 129, 0.08);
+    --agora-danger: #ef4444;
+    --agora-bg: #0b1220;
+    --agora-bg-elevated: #020617;
+    --agora-bg-grid: #1e293b;
+    --agora-surface: #020617;
+    --agora-border-subtle: #1f2937;
+    --agora-border-strong: #4b5563;
+    --agora-text: #e5e7eb;
+    --agora-text-muted: #9ca3af;
+    --agora-text-soft: #6b7280;
+
+    /* Radii & shadows */
+    --agora-radius-lg: 16px;
+    --agora-radius-md: 12px;
+    --agora-radius-pill: 999px;
+    --agora-shadow-soft: 0 18px 40px rgba(15, 23, 42, 0.65);
+    --agora-shadow-subtle: 0 10px 25px rgba(15, 23, 42, 0.55);
+
+    /* Typography */
+    --agora-font-sans: system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, sans-serif;
+    --agora-font-mono: "SF Mono", "Roboto Mono", ui-monospace, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+}
+
+/* Global Background and Typography */
+body,
+.stApp {
+    font-family: var(--agora-font-sans);
+    color: var(--agora-text);
+    background-color: var(--agora-bg);
+}
+
+[data-testid="stAppViewContainer"] {
+    background-color: var(--agora-bg);
+    background-image:
+        radial-gradient(circle at 0% 0%, rgba(56, 189, 248, 0.35), transparent 55%),
+        radial-gradient(circle at 100% 0%, rgba(129, 140, 248, 0.4), transparent 55%),
+        linear-gradient(var(--agora-bg-grid) 1px, transparent 1px),
+        linear-gradient(90deg, var(--agora-bg-grid) 1px, transparent 1px);
+    background-size: 100% 100%, 100% 100%, 40px 40px, 40px 40px;
+    background-position: 0 0, 0 0, 0 0, 0 0;
+    color: var(--agora-text);
+    font-family: var(--agora-font-sans);
+}
+
+/* Hide the top Streamlit chrome */
+[data-testid="stHeader"] {
+    background-color: transparent;
+}
+
+/* Global header */
+.agora-header {
+    position: relative;
+    padding: 18px 26px;
+    border-radius: var(--agora-radius-lg);
+    border: 1px solid rgba(148, 163, 184, 0.35);
+    background:
+        linear-gradient(120deg, rgba(56, 189, 248, 0.28), rgba(129, 140, 248, 0.15), rgba(52, 211, 153, 0.25)),
+        linear-gradient(135deg, rgba(15, 23, 42, 0.96), rgba(15, 23, 42, 0.92));
+    box-shadow: var(--agora-shadow-soft);
+    display: flex;
+    align-items: center;
+    gap: 18px;
+    margin: 4px 0 18px 0;
+    overflow: hidden;
+}
+
+.agora-header::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(circle at 10% 0%, rgba(248, 250, 252, 0.12), transparent 55%);
+    opacity: 0.8;
+    pointer-events: none;
+}
+
+.agora-header-icon {
+    position: relative;
+    width: 42px;
+    height: 42px;
+    border-radius: 20px;
+    background: radial-gradient(circle at 30% 30%, rgba(248, 250, 252, 0.95), rgba(191, 219, 254, 0.65));
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 12px 30px rgba(15, 23, 42, 0.6);
+    flex-shrink: 0;
+    font-size: 1.4rem;
+    overflow: hidden;
+}
+
+.agora-header-logo {
+    width: 70%;
+    height: auto;
+    display: block;
+}
+
+.agora-header-text {
+    position: relative;
+    z-index: 1;
+}
+
+.agora-header-title {
+    margin: 0;
+    font-family: var(--agora-font-mono);
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    font-size: 0.9rem;
+    color: rgba(226, 232, 240, 0.9);
+}
+
+.agora-header-highlight {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    margin: 4px 0 0 0;
+    padding: 4px 10px;
+    border-radius: var(--agora-radius-pill);
+    background: rgba(15, 23, 42, 0.6);
+    border: 1px solid rgba(148, 163, 184, 0.5);
+    font-size: 0.7rem;
+    font-family: var(--agora-font-mono);
+    text-transform: uppercase;
+    letter-spacing: 0.16em;
+    color: var(--agora-text-muted);
+}
+
+.agora-header-subtitle {
+    margin: 8px 0 0 0;
+    font-size: 0.85rem;
+    color: var(--agora-text-soft);
+}
+
+/* Post Cards */
+.post-card {
+    background: radial-gradient(circle at 0% 0%, rgba(148, 163, 184, 0.12), transparent 55%), var(--agora-bg-elevated);
+    border: 1px solid rgba(51, 65, 85, 0.85);
+    border-radius: var(--agora-radius-lg);
+    padding: 22px 24px;
+    margin-bottom: 22px;
+    box-shadow: var(--agora-shadow-subtle);
+    transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease, background 0.18s ease;
+    backdrop-filter: blur(16px);
+}
+
+.post-card:hover {
+    transform: translateY(-1px);
+    box-shadow: var(--agora-shadow-soft);
+    border-color: rgba(129, 140, 248, 0.95);
+    background: radial-gradient(circle at 0% 0%, rgba(129, 140, 248, 0.18), transparent 60%), var(--agora-bg-elevated);
+}
+
+/* Post Header */
+.post-header {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin-bottom: 14px;
+}
+
+.vote-count {
+    font-size: 1.05em;
+    font-weight: 700;
+    color: var(--agora-text-muted);
+    min-width: 40px;
+    text-align: right;
+    background: transparent;
+    padding: 0;
+    border-radius: 0;
+    font-family: var(--agora-font-mono);
+}
+
+.post-meta {
+    color: var(--agora-text-soft);
+    font-size: 0.78em;
+    font-family: var(--agora-font-mono);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+}
+
+/* Post Content */
+.post-content {
+    font-size: 1.06em;
+    font-weight: 500;
+    line-height: 1.55;
+    color: var(--agora-text);
+    margin: 14px 0 12px 0;
+}
+
+/* Comment Blocks */
+.comment-block {
+    border-left: 2px solid rgba(75, 85, 99, 0.85);
+    margin: 12px 0 12px 18px;
+    padding: 6px 16px 8px 16px;
+    background: linear-gradient(90deg, rgba(15, 23, 42, 0.3), rgba(15, 23, 42, 0.7));
+    border-radius: 0 var(--agora-radius-md) var(--agora-radius-md) 0;
+}
+
+.comment-text {
+    color: rgba(226, 232, 240, 0.9);
+    margin-top: 6px;
+    font-size: 0.98em;
+    line-height: 1.55;
+}
+
+/* Activity Feed Items */
+.activity-item {
+    padding: 14px 14px 13px 14px;
+    border: 1px solid rgba(51, 65, 85, 0.9);
+    font-size: 0.86em;
+    line-height: 1.5;
+    background: linear-gradient(135deg, rgba(15, 23, 42, 0.92), rgba(15, 23, 42, 0.98));
+    border-radius: var(--agora-radius-md);
+    margin-bottom: 10px;
+    box-shadow: 0 10px 25px rgba(15, 23, 42, 0.65);
+}
+
+.activity-preview {
+    color: var(--agora-text-soft);
+    margin-top: 6px;
+    font-style: normal;
+    background: transparent;
+    padding: 0;
+    font-size: 0.9em;
+}
+
+/* Streamlit overrides */
+.stRadio > div > label > div[data-testid="stMarkdownContainer"] > p {
+    color: var(--agora-text-soft) !important;
+    font-weight: 600 !important;
+    font-size: 0.78em !important;
+    text-transform: uppercase;
+    font-family: var(--agora-font-mono);
+    letter-spacing: 0.16em;
+}
+
+[data-testid="stMetricValue"] {
+    color: rgba(226, 232, 240, 0.9);
+    font-family: var(--agora-font-mono);
+    font-weight: 700;
+    text-shadow: 0 0 22px rgba(56, 189, 248, 0.4);
+}
+
+[data-testid="stMetricLabel"] {
+    color: var(--agora-text-muted);
+    font-weight: 600;
+    text-transform: uppercase;
+    font-size: 0.76em;
+    font-family: var(--agora-font-mono);
+    letter-spacing: 0.16em;
+}
+
