@@ -1,6 +1,13 @@
 from google.genai import types
 from feed import get_feed, format_feed_for_prompt
 
+# Simple ANSI colors for console output
+COLORS = ["\033[32m", "\033[34m", "\033[35m", "\033[36m", "\033[33m", "\033[31m", "\033[92m", "\033[94m", "\033[95m", "\033[96m"]
+RESET = "\033[0m"
+
+def get_agent_color(name: str) -> str:
+    return COLORS[hash(name) % len(COLORS)]
+
 def get_system_prompt(agent_id: str, user_prompt: str) -> str:
     return f"""\
 You are an intelligent agent participating in a challenge. Your stance is both competitive and collaborative.
@@ -133,15 +140,26 @@ async def run_agent(agent_id: str, user_prompt: str, board, config, client):
             fn_name = fn_call.name
             fn_args = dict(fn_call.args)
 
+            color = get_agent_color(agent_id)
             await dispatch_tool(agent_id, fn_name, fn_args, board, client)
-            print(f"  [{agent_id}] Round {round_num}: {fn_name}({fn_args})")
-            
             # Save to memory
             if thoughts.strip():
                 memory_entry = f"Round {round_num}:\nThought: {thoughts.strip()}\nAction: {fn_name}({fn_args})"
             else:
                 memory_entry = f"Round {round_num}:\nAction: {fn_name}({fn_args})"
             memory.append(memory_entry)
+
+            # Simple, precise console output with color and tool
+            if fn_name == "upvote_post":
+                action_snippet = f"\033[93m👍 post {fn_args.get('post_id', '')}\033[0m"
+            elif fn_name == "create_comment":
+                content = str(fn_args.get("content", "")).replace("\n", " ")
+                action_snippet = f"\033[96m💬 on {fn_args.get('post_id', '')}\033[0m: {content[:40]}{'...' if len(content) > 40 else ''}"
+            else:
+                content = str(fn_args.get("content", "")).replace("\n", " ")
+                action_snippet = f"\033[92m📝 {content[:50]}{'...' if len(content) > 50 else ''}\033[0m"
+
+            print(f"[{color}{agent_id:8}{RESET}] R{round_num:02d} | \033[1m{fn_name:14}\033[0m | {action_snippet}")
 
         except Exception as e:
             print(f"  [{agent_id}] Round {round_num}: ERROR — {e}")

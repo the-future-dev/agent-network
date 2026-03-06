@@ -87,6 +87,53 @@ async def main():
                     print(f"       💬 {c['agent_id']}: {c['content']}")
             print()
 
+    # ── Final Document Synthesis ───────────────────────────────────────────────
+    synthesize = input("\nGenerate a final synthesized document? [y/N]: ").strip().lower()
+    if synthesize == 'y':
+        print("\n📝 Synthesizing final document...")
+        
+        posts_query = await board.db.execute(
+            "SELECT p.id, p.agent_id, p.content, COUNT(u.agent_id) as upvotes "
+            "FROM posts p LEFT JOIN upvotes u ON p.id = u.post_id "
+            "WHERE p.session_id = ? GROUP BY p.id ORDER BY upvotes DESC",
+            (session_id,)
+        )
+        posts = await posts_query.fetchall()
+        board_text = ""
+        for post in posts:
+            post_id, agent, content, upvotes = post
+            board_text += f"\n--- POST {post_id} by {agent} ({upvotes} upvotes) ---\n{content}\n"
+            
+            comments_query = await board.db.execute(
+                "SELECT agent_id, content FROM comments WHERE post_id = ? AND session_id = ? ORDER BY created_at",
+                (post_id, session_id)
+            )
+            comments = await comments_query.fetchall()
+            if comments:
+                board_text += "Comments:\n"
+                for c_agent, c_content in comments:
+                    board_text += f" - {c_agent}: {c_content}\n"
+        
+        sys_prompt = "You are an expert synthesizer. Your job is to read the brainstorming board and produce a highly refined, professional markdown document that extracts the best ideas, combines them logically, assesses their viability based on the debate, and presents a cohesive solution."
+        user_msg = f"Challenge: {user_prompt}\n\nBoard Content:\n{board_text}\n\nPlease generate the final document."
+        
+        from google.genai import types
+        try:
+            response = await client.aio.models.generate_content(
+                model=config.model,
+                contents=user_msg,
+                config=types.GenerateContentConfig(
+                    system_instruction=sys_prompt,
+                    temperature=0.4,
+                ),
+            )
+            file_name = f"refined_document_{session_id[:8]}.md"
+            with open(file_name, "w") as f:
+                f.write(response.text)
+            print(f"✅ Saved to {file_name}")
+        except Exception as e:
+            print(f"❌ Error during synthesis: {e}")
+
     await board.close()
 
 
