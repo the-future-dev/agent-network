@@ -14,6 +14,7 @@ import json
 import subprocess
 import sys
 from contextlib import asynccontextmanager
+from datetime import datetime as _dt
 from pathlib import Path
 
 import aiosqlite
@@ -21,6 +22,14 @@ from fastapi import FastAPI, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
+
+from config import Config
+try:
+    from google import genai as _genai
+    from google.genai import types as _types
+except ImportError:
+    _genai = None  # type: ignore
+    _types = None  # type: ignore
 
 # ── Configuration ───────────────────────────────────────────────────────────
 PROJECT_ROOT = Path(__file__).resolve().parent
@@ -36,6 +45,15 @@ async def lifespan(app: FastAPI):
     db_connection = await aiosqlite.connect(DB_PATH, uri=False)
     db_connection.row_factory = aiosqlite.Row
     await db_connection.execute("PRAGMA journal_mode=WAL")
+    # Create synthesized_documents table if it doesn't exist
+    await db_connection.execute("""
+        CREATE TABLE IF NOT EXISTS synthesized_documents (
+            session_id TEXT PRIMARY KEY,
+            content    TEXT NOT NULL,
+            created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        )
+    """)
+    await db_connection.commit()
     yield
     if db_connection:
         await db_connection.close()
@@ -284,12 +302,138 @@ async def launch_swarm(body: LaunchRequest):
     if not prompt:
         prompt = "Generate ad campaign concepts for a sustainable fashion brand's Super Bowl spot"
 
+    # --no-synthesize-document prevents main.py from blocking on stdin
     subprocess.Popen(
-        [sys.executable, "main.py", "--prompt", prompt],
+        [sys.executable, "main.py", "--prompt", prompt, "--no-synthesize-document"],
         cwd=str(PROJECT_ROOT),
     )
 
     return {"status": "launched", "prompt": prompt}
+
+
+class SynthesizeRequest(BaseModel):
+    session_id: str
+
+
+@app.get("/api/synthesize")
+async def get_synthesized_doc(session_id: Optional[str] = Query(None)):
+    """Return the stored synthesized document for a session, or null."""
+    db = _db()
+    sid = await _resolve_session_id(session_id)
+    if not sid:
+        return {"content": None, "session_id": None}
+    async with db.execute(
+        "SELECT content, created_at FROM synthesized_documents WHERE session_id = ?",
+        (sid,),
+    ) as cur:
+        row = await cur.fetchone()
+        if row:
+            return {"session_id": sid, "content": row[0], "created_at": row[1]}
+        return {"session_id": sid, "content": None}
+
+
+@app.post("/api/synthesize")
+async def synthesize_document(body: SynthesizeRequest):
+    """Run document synthesis for the given session and store result in DB."""
+    if _genai is None:
+        return {"status": "error", "detail": "google-genai not installed"}
+
+    db = _db()
+    sid = body.session_id
+
+    # Check if already synthesized (use shared connection for quick reads)
+    async with db.execute(
+        "SELECT content FROM synthesized_documents WHERE session_id = ?", (sid,)
+    ) as cur:
+        existing = await cur.fetchone()
+        if existing:
+            return {"status": "already_exists", "content": existing[0]}
+
+    # Use a dedicated connection for the multi-step read queries to avoid
+    # conflicting with the shared connection's pending cursors.
+    async with aiosqlite.connect(DB_PATH) as rdb:
+        rdb.row_factory = aiosqlite.Row
+        await rdb.execute("PRAGMA journal_mode=WAL")
+
+        # Fetch posts
+        async with rdb.execute(
+            "SELECT p.id, p.agent_id, p.content, COUNT(u.agent_id) as upvotes "
+            "FROM posts p LEFT JOIN upvotes u ON p.id = u.post_id "
+            "WHERE p.session_id = ? GROUP BY p.id ORDER BY upvotes DESC",
+            (sid,)
+        ) as cur:
+            posts = await cur.fetchall()
+
+        if not posts:
+            return {"status": "error", "detail": "No posts found for this session."}
+
+        board_text = ""
+        for post in posts:
+            post_id = post[0]
+            agent = post[1]
+            content = post[2]
+            upvotes = post[3]
+            board_text += f"\n--- POST {post_id} by {agent} ({upvotes} upvotes) ---\n{content}\n"
+
+            async with rdb.execute(
+                "SELECT agent_id, content FROM comments "
+                "WHERE post_id = ? AND session_id = ? ORDER BY created_at",
+                (post_id, sid)
+            ) as ccur:
+                comments = await ccur.fetchall()
+
+            if comments:
+                board_text += "Comments:\n"
+        # Fetch session prompt
+        async with rdb.execute(
+            "SELECT prompt FROM sessions WHERE id = ?", (sid,)
+        ) as cur:
+            row = await cur.fetchone()
+            user_prompt = row[0] if row else "Unknown challenge"
+
+    import os
+    from dotenv import load_dotenv
+    load_dotenv()
+
+    config = Config()
+    client = _genai.Client(api_key=os.environ.get("GOOGLE_API_KEY"))
+    sys_prompt = (
+        "You are an expert synthesizer. Read the brainstorming board and produce a highly "
+        "refined, professional markdown document that extracts the best ideas, combines them "
+        "logically, assesses viability based on the debate, and presents a cohesive solution."
+    )
+    user_msg = (
+        f"Challenge: {user_prompt}\n\nBoard Content:\n{board_text}\n\n"
+        "Please generate the final document."
+    )
+
+    try:
+        # Use synchronous API in a thread to avoid async httpx client
+        # initialisation issues with genai SDK on Python 3.9.
+        def _call_gemini():
+            return client.models.generate_content(
+                model=config.model,
+                contents=user_msg,
+                config=_types.GenerateContentConfig(
+                    system_instruction=sys_prompt,
+                    temperature=0.4,
+                ),
+            )
+
+        response = await asyncio.to_thread(_call_gemini)
+        doc_content = response.text
+    except Exception as e:
+        return {"status": "error", "detail": str(e)}
+
+    now = _dt.utcnow().isoformat() + "Z"
+    await db.execute(
+        "INSERT OR REPLACE INTO synthesized_documents (session_id, content, created_at) "
+        "VALUES (?, ?, ?)",
+        (sid, doc_content, now)
+    )
+    await db.commit()
+
+    return {"status": "ok", "content": doc_content, "created_at": now}
 
 
 # ── SSE Stream ──────────────────────────────────────────────────────────────

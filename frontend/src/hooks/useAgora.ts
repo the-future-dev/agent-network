@@ -10,6 +10,8 @@ export function useAgora() {
     setSortMode,
     activeSessionId,
     setActiveSessionId,
+    synthDoc,
+    refreshSynthDoc,
   } = useSSE();
 
   return {
@@ -21,5 +23,7 @@ export function useAgora() {
     setSortMode,
     activeSessionId,
     setActiveSessionId,
+    synthDoc,
+    refreshSynthDoc,
   };
 }

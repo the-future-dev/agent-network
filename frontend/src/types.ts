@@ -46,6 +46,12 @@ export type SortMode = "top" | "newest";
 
 export type ConnectionStatus = "connecting" | "connected" | "disconnected";
 
+export interface SynthesizedDoc {
+  session_id: string;
+  content: string;
+  created_at: string;
+}
+
 export interface SessionListItem {
   id: string;
   prompt: string;

@@ -92,7 +92,12 @@ async def main():
             print()
 
     # ── Final Document Synthesis ───────────────────────────────────────────────
-    synthesize = input("\nGenerate a final synthesized document? [y/N]: ").strip().lower()
+    # Skip synthesis entirely when spawned by the API (avoids blocking on stdin)
+    no_synthesize = "--no-synthesize-document" in sys.argv
+    if not no_synthesize:
+        synthesize = input("\nGenerate a final synthesized document? [y/N]: ").strip().lower()
+    else:
+        synthesize = 'n'
     if synthesize == 'y':
         print("\n📝 Synthesizing final document...")
         

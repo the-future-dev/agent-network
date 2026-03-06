@@ -8,6 +8,7 @@ import type {
   Comment,
   Activity,
   SortMode,
+  SynthesizedDoc,
 } from "../types";
 
 const RECONNECT_DELAY = 3000;
@@ -21,6 +22,8 @@ interface UseSSEResult {
   setSortMode: (s: SortMode) => void;
   activeSessionId: string | null;
   setActiveSessionId: (id: string | null) => void;
+  synthDoc: SynthesizedDoc | null;
+  refreshSynthDoc: () => Promise<void>;
 }
 
 function sessionParam(sid: string | null): string {
@@ -31,11 +34,15 @@ export function useSSE(): UseSSEResult {
   const [session, setSession] = useState<SessionData | null>(null);
   const [feed, setFeed] = useState<FeedData | null>(null);
   const [activity, setActivity] = useState<ActivityData | null>(null);
+  const [synthDoc, setSynthDoc] = useState<SynthesizedDoc | null>(null);
   const [connectionStatus, setConnectionStatus] =
     useState<ConnectionStatus>("connecting");
   const [sortMode, setSortMode] = useState<SortMode>("top");
   const [isLoading, setIsLoading] = useState(true);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
+
+  const activeSessionIdRef = useRef<string | null>(null);
+  activeSessionIdRef.current = activeSessionId;
 
   const eventSourceRef = useRef<EventSource | null>(null);
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -48,18 +55,22 @@ export function useSSE(): UseSSEResult {
       const sp = sessionParam(sid);
       const sep = sp ? "&" : "";
       try {
-        const [sessRes, feedRes, actRes] = await Promise.all([
+        const [sessRes, feedRes, actRes, synthRes] = await Promise.all([
           fetch(`/api/sessions${sp ? "?" + sp : ""}`),
           fetch(`/api/feed?sort=${sort}&limit=50${sep}${sp}`),
           fetch(`/api/activity?limit=30${sp ? "&" + sp : ""}`),
+          fetch(`/api/synthesize${sp ? "?" + sp : ""}`),
         ]);
         const sessData = await sessRes.json();
         const feedData = await feedRes.json();
         const actData = await actRes.json();
+        const synthData = await synthRes.json();
 
         setSession(sessData);
         setFeed(feedData);
         setActivity(actData);
+        if (synthData.content) setSynthDoc(synthData as SynthesizedDoc);
+        else setSynthDoc(null);
         setIsLoading(false);
       } catch (err) {
         console.error("Failed to fetch data:", err);
@@ -68,6 +79,19 @@ export function useSSE(): UseSSEResult {
     },
     [],
   );
+
+  const refreshSynthDoc = useCallback(async () => {
+    const sid = activeSessionIdRef.current;
+    const sp = sid ? `session_id=${encodeURIComponent(sid)}` : "";
+    try {
+      const res = await fetch(`/api/synthesize${sp ? "?" + sp : ""}`);
+      const data = await res.json();
+      if (data.content) setSynthDoc(data as SynthesizedDoc);
+      else setSynthDoc(null);
+    } catch (err) {
+      console.error("Failed to refresh synth doc:", err);
+    }
+  }, []);
 
   // ── SSE connection ───────────────────────────────────────────────────────
   const connect = useCallback(
@@ -160,11 +184,11 @@ export function useSSE(): UseSSEResult {
             posts: prev.posts.map((p) =>
               p.id === postId
                 ? {
-                    ...p,
-                    comments: p.comments.some((c) => c.id === comment.id)
-                      ? p.comments
-                      : [...p.comments, comment],
-                  }
+                  ...p,
+                  comments: p.comments.some((c) => c.id === comment.id)
+                    ? p.comments
+                    : [...p.comments, comment],
+                }
                 : p,
             ),
           };
@@ -296,5 +320,7 @@ export function useSSE(): UseSSEResult {
     setSortMode,
     activeSessionId,
     setActiveSessionId,
+    synthDoc,
+    refreshSynthDoc,
   };
 }

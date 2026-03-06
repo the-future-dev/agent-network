@@ -13,6 +13,8 @@ export default function App() {
     setSortMode,
     activeSessionId,
     setActiveSessionId,
+    synthDoc,
+    refreshSynthDoc,
   } = useAgora();
 
   return (
@@ -30,6 +32,9 @@ export default function App() {
         sortMode={sortMode}
         setSortMode={setSortMode}
         isLoading={feed.isLoading}
+        synthDoc={synthDoc}
+        activeSessionId={activeSessionId}
+        onSynthesized={refreshSynthDoc}
       />
 
       <RightPanel

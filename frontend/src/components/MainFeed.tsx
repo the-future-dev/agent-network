@@ -1,5 +1,5 @@
-import type { JSX } from "react";
-import type { FeedData, Post, Comment, SortMode } from "../types";
+import { useState, type JSX } from "react";
+import type { FeedData, Post, Comment, SortMode, SynthesizedDoc } from "../types";
 import { formatTimeAgo } from "../utils";
 import ReactMarkdown from "react-markdown";
 
@@ -8,6 +8,9 @@ interface MainFeedProps {
   sortMode: SortMode;
   setSortMode: (s: SortMode) => void;
   isLoading: boolean;
+  synthDoc: SynthesizedDoc | null;
+  activeSessionId: string | null;
+  onSynthesized: () => Promise<void>;
 }
 
 /* ── Agent Avatar ───────────────────────────────────────────────────── */
@@ -179,8 +182,133 @@ function SortToggle({ sortMode, setSortMode }: { sortMode: SortMode; setSortMode
   );
 }
 
+/* ── Synthesized Document Card ──────────────────────────────────────── */
+function SynthesizedDocCard({ doc }: { doc: SynthesizedDoc }) {
+  const [expanded, setExpanded] = useState(true);
+  return (
+    <article className="relative border border-accent/30 rounded-xl bg-surface p-5 animate-fade-in overflow-hidden">
+      {/* Gradient accent bar */}
+      <div className="absolute inset-x-0 top-0 h-0.5 bg-gradient-to-r from-accent via-purple-400 to-accent/30 rounded-t-xl" />
+
+      {/* Header */}
+      <div className="flex items-center gap-3 mb-4">
+        <span className="h-8 w-8 rounded-full bg-gradient-to-br from-accent to-purple-500 flex items-center justify-center text-white text-sm shrink-0">
+          📝
+        </span>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-semibold text-text-primary">Synthesis</span>
+            <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-accent/10 text-accent border border-accent/20">
+              AI Generated
+            </span>
+          </div>
+          <p className="text-[11px] text-text-tertiary mt-0.5">
+            {formatTimeAgo(doc.created_at)}
+          </p>
+        </div>
+        <button
+          onClick={() => setExpanded((e) => !e)}
+          className="text-[11px] text-text-tertiary hover:text-text-secondary transition-colors cursor-pointer px-2 py-1 rounded hover:bg-surface-hover"
+        >
+          {expanded ? "Collapse" : "Expand"}
+        </button>
+      </div>
+
+      {/* Content */}
+      {expanded && (
+        <div className="text-sm text-text-primary leading-[1.7] prose prose-sm max-w-none border-t border-border/50 pt-4">
+          <ReactMarkdown>{doc.content}</ReactMarkdown>
+        </div>
+      )}
+    </article>
+  );
+}
+
+/* ── Generate Document Banner ───────────────────────────────────────── */
+function GenerateDocBanner({
+  sessionId,
+  onSynthesized,
+}: {
+  sessionId: string;
+  onSynthesized: () => Promise<void>;
+}) {
+  const [status, setStatus] = useState<"idle" | "loading" | "error">("idle");
+  const [errMsg, setErrMsg] = useState("");
+
+  const handleGenerate = async () => {
+    setStatus("loading");
+    setErrMsg("");
+    try {
+      const res = await fetch("/api/synthesize", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ session_id: sessionId }),
+      });
+      const data = await res.json();
+      if (data.status === "error") {
+        setErrMsg(data.detail ?? "Unknown error");
+        setStatus("error");
+        return;
+      }
+      await onSynthesized();
+      setStatus("idle");
+    } catch (e: unknown) {
+      setErrMsg(e instanceof Error ? e.message : "Request failed");
+      setStatus("error");
+    }
+  };
+
+  return (
+    <div className="flex items-center gap-4 p-4 rounded-xl border border-border bg-surface/60 backdrop-blur-sm animate-fade-in">
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-medium text-text-primary">Brainstorming complete</p>
+        <p className="text-xs text-text-tertiary mt-0.5">
+          Generate a refined synthesis document from all agent ideas and debate.
+        </p>
+        {status === "error" && (
+          <p className="text-xs text-red-500 mt-1">{errMsg}</p>
+        )}
+      </div>
+      <button
+        id="generate-document-btn"
+        onClick={handleGenerate}
+        disabled={status === "loading"}
+        className="shrink-0 flex items-center gap-2 px-4 py-2 text-xs font-semibold rounded-lg bg-accent text-white hover:bg-accent/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-150 cursor-pointer"
+      >
+        {status === "loading" ? (
+          <>
+            <svg className="h-3.5 w-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+            </svg>
+            Synthesizing…
+          </>
+        ) : (
+          <>
+            <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            </svg>
+            Generate Document
+          </>
+        )}
+      </button>
+    </div>
+  );
+}
+
 /* ── Main Feed ──────────────────────────────────────────────────────── */
-export default function MainFeed({ feed, sortMode, setSortMode, isLoading }: MainFeedProps) {
+export default function MainFeed({
+  feed,
+  sortMode,
+  setSortMode,
+  isLoading,
+  synthDoc,
+  activeSessionId,
+  onSynthesized,
+}: MainFeedProps) {
+  const hasPosts = (feed?.count ?? 0) > 0;
+  const showGenerateBanner = hasPosts && !synthDoc && activeSessionId;
+
   return (
     <main className="flex-1 min-w-0 overflow-y-auto h-screen">
       {/* Header */}
@@ -200,6 +328,17 @@ export default function MainFeed({ feed, sortMode, setSortMode, isLoading }: Mai
 
       {/* Feed Cards */}
       <div className="px-6 py-5 space-y-4 max-w-[720px] mx-auto">
+        {/* Generate Document Banner */}
+        {showGenerateBanner && (
+          <GenerateDocBanner
+            sessionId={activeSessionId}
+            onSynthesized={onSynthesized}
+          />
+        )}
+
+        {/* Synthesized Document Card — pinned at top */}
+        {synthDoc && <SynthesizedDocCard doc={synthDoc} />}
+
         {isLoading ? (
           [...Array(5)].map((_, i) => <SkeletonCard key={i} />)
         ) : feed?.posts.length ? (
@@ -218,3 +357,4 @@ export default function MainFeed({ feed, sortMode, setSortMode, isLoading }: Mai
     </main>
   );
 }
+
