@@ -22,10 +22,13 @@ async def main():
         idx = sys.argv.index("--model")
         config.model = sys.argv[idx + 1]
 
-    user_prompt = (
-        input("Creative challenge (or press Enter for default): ").strip()
-        or "Generate ad campaign concepts for a sustainable fashion brand's Super Bowl spot"
-    )
+    # Accept prompt from CLI: python main.py --prompt "..."
+    # Falls back to a default if not provided (useful for direct CLI runs)
+    if "--prompt" in sys.argv:
+        idx = sys.argv.index("--prompt")
+        user_prompt = sys.argv[idx + 1]
+    else:
+        user_prompt = "Generate ad campaign concepts for a sustainable fashion brand's Super Bowl spot"
 
     # Create a new session for this run — no longer wipes the DB
     session_id = str(uuid.uuid4())

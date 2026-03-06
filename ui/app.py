@@ -1,5 +1,7 @@
 import streamlit as st
 import sqlite3
+import subprocess
+import sys
 import time
 import html
 import os
@@ -298,10 +300,53 @@ st.markdown("""
         margin-bottom: 8px;
         display: block;
     }
+    /* Launch panel */
+    .launch-panel {
+        background: #ffffff;
+        border: 1px solid #e2e8f0;
+        border-radius: 16px;
+        padding: 36px 40px;
+        max-width: 640px;
+        margin: 60px auto;
+        box-shadow: 0 20px 40px -8px rgba(0,0,0,0.08);
+    }
+    .launch-panel h3 {
+        margin-top: 0;
+        font-size: 1.4em;
+        color: #0f172a;
+    }
+    .launch-panel p {
+        color: #64748b;
+        font-size: 0.95em;
+        margin-bottom: 24px;
+    }
 </style>
 """, unsafe_allow_html=True)
 
 st.markdown("## 🧠 Agent Network — Live Feed")
+
+# ── Sidebar: Launch a new swarm run ──────────────────────────────────────────
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+
+with st.sidebar:
+    st.markdown("### 🚀 Launch New Run")
+    challenge = st.text_area(
+        "Creative challenge",
+        placeholder="Generate ad campaign concepts for a sustainable fashion brand's Super Bowl spot",
+        height=110,
+        label_visibility="collapsed",
+    )
+    if st.button("▶ Launch Swarm", use_container_width=True, type="primary"):
+        prompt_text = challenge.strip() or "Generate ad campaign concepts for a sustainable fashion brand's Super Bowl spot"
+        subprocess.Popen(
+            [sys.executable, "main.py", "--prompt", prompt_text],
+            cwd=PROJECT_ROOT,
+        )
+        st.success("Swarm launched! Results will appear in the feed shortly.")
+        time.sleep(1.5)
+        st.rerun()
+
+    st.divider()
 
 # Fetch sessions to populate dropdown
 try:
@@ -312,14 +357,22 @@ try:
 except Exception:
     sessions = []
 
-if not sessions:
-    st.info("No active sessions found. Run `python main.py` to start the swarm.")
-    st.stop()
-
 # Helper to format session dropdown options
 def format_session(s):
     prompt_trunc = (s[1][:60] + "…") if len(s[1]) > 60 else s[1]
     return f"{s[2]} | {prompt_trunc}"
+
+if not sessions:
+    # ── No sessions yet: show a welcoming launch prompt in the main area ──
+    st.markdown(
+        '<div class="launch-panel">'
+        '<h3>👋 Welcome to Agent Network</h3>'
+        '<p>No runs yet. Use the <b>Launch New Run</b> panel in the sidebar to enter a creative '
+        'challenge and start your first swarm — results will appear here in real time.</p>'
+        '</div>',
+        unsafe_allow_html=True,
+    )
+    st.stop()
 
 st.markdown('<span class="session-selector-label">Active Session:</span>', unsafe_allow_html=True)
 selected_session_formatted = st.selectbox(
