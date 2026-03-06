@@ -1,6 +1,7 @@
 import asyncio
 import os
 import sys
+import uuid
 from dotenv import load_dotenv
 from google import genai
 from board import Board
@@ -26,12 +27,18 @@ async def main():
         or "Generate ad campaign concepts for a sustainable fashion brand's Super Bowl spot"
     )
 
-    # Wipe old DB so each run starts fresh
-    if os.path.exists(config.db_path):
-        os.remove(config.db_path)
+    # Create a new session for this run — no longer wipes the DB
+    session_id = str(uuid.uuid4())
 
-    board = Board(config.db_path)
+    board = Board(config.db_path, session_id)
     await board.init()
+
+    # Register session in the DB
+    await board.db.execute(
+        "INSERT INTO sessions (id, prompt) VALUES (?, ?)",
+        (session_id, user_prompt)
+    )
+    await board.db.commit()
 
     # Scandinavian agent personas
     AGENT_PERSONAS = [
@@ -47,7 +54,8 @@ async def main():
     ]
 
     print(f"\n🚀 Launching {config.num_agents} agents × {config.num_rounds} rounds")
-    print(f"   Model: {config.model}  |  DB: {config.db_path}\n")
+    print(f"   Model: {config.model}  |  DB: {config.db_path}")
+    print(f"   Session: {session_id}\n")
     print(f'   Challenge: "{user_prompt}"\n')
     print("─" * 60)
 

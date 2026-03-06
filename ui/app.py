@@ -234,162 +234,215 @@ st.markdown("""
         font-size: 0.8em;
         font-family: 'SF Mono', 'Roboto Mono', 'Fira Code', monospace;
     }
+    .session-selector-label {
+        color: #475569;
+        font-weight: 700;
+        font-family: 'SF Mono', 'Roboto Mono', monospace;
+        font-size: 0.9em;
+        text-transform: uppercase;
+        margin-bottom: 8px;
+        display: block;
+    }
 </style>
 """, unsafe_allow_html=True)
 
 st.markdown("## 🧠 Agent Network — Live Feed")
 
+# Fetch sessions to populate dropdown
+try:
+    with sqlite3.connect(DB_PATH) as _tmp_db:
+        sessions = _tmp_db.execute(
+            "SELECT id, prompt, created_at FROM sessions ORDER BY created_at DESC"
+        ).fetchall()
+except Exception:
+    sessions = []
+
+if not sessions:
+    st.info("No active sessions found. Run `python main.py` to start the swarm.")
+    st.stop()
+
+# Helper to format session dropdown options
+def format_session(s):
+    prompt_trunc = (s[1][:60] + "…") if len(s[1]) > 60 else s[1]
+    return f"{s[2]} | {prompt_trunc}"
+
+st.markdown('<span class="session-selector-label">Active Session:</span>', unsafe_allow_html=True)
+selected_session_formatted = st.selectbox(
+    "Select Session",
+    options=[format_session(s) for s in sessions],
+    label_visibility="collapsed"
+)
+
+# Extract the selected session ID based on the selection
+selected_session_id = next(
+    s[0] for s in sessions if format_session(s) == selected_session_formatted
+)
+
 placeholder = st.empty()
 
-while True:
-    with placeholder.container():
-        try:
-            db = sqlite3.connect(DB_PATH)
 
-            # ── Stats bar ──────────────────────────────────────────────────────
-            n_posts    = db.execute("SELECT COUNT(*) FROM posts").fetchone()[0]
-            n_comments = db.execute("SELECT COUNT(*) FROM comments").fetchone()[0]
-            n_upvotes  = db.execute("SELECT COUNT(*) FROM upvotes").fetchone()[0]
-            n_agents   = db.execute(
-                "SELECT COUNT(DISTINCT agent_id) FROM posts"
-            ).fetchone()[0]
+# The Streamlit `while True` loop doesn't play nicely with `st.selectbox`
+# because changing the selectbox throws RerunException, interrupting the loop.
+# It's better to use `st.rerun()` directly instead of a blocking `while` loop.
+# To keep auto-refreshing, we can use an empty container and redraw within it, 
+# then call time.sleep and st.rerun(). Streamlit standard fragment or generic rerun is best.
 
-            c1, c2, c3, c4 = st.columns(4)
-            c1.metric("📝 Posts", n_posts)
-            c2.metric("💬 Comments", n_comments)
-            c3.metric("⬆ Upvotes", n_upvotes)
-            c4.metric("🤖 Active Agents", n_agents)
+# Removing block while True to allow native Stremlit interaction.
+with placeholder.container():
+    try:
+        db = sqlite3.connect(DB_PATH)
 
-            # ── Two-column layout ─────────────────────────────────────────────
-            feed_col, activity_col = st.columns([3, 1])
+        # ── Stats bar ──────────────────────────────────────────────────────
+        n_posts    = db.execute("SELECT COUNT(*) FROM posts WHERE session_id = ?", (selected_session_id,)).fetchone()[0]
+        n_comments = db.execute("SELECT COUNT(*) FROM comments WHERE session_id = ?", (selected_session_id,)).fetchone()[0]
+        n_upvotes  = db.execute("SELECT COUNT(*) FROM upvotes WHERE session_id = ?", (selected_session_id,)).fetchone()[0]
+        n_agents   = db.execute(
+            "SELECT COUNT(DISTINCT agent_id) FROM posts WHERE session_id = ?", (selected_session_id,)
+        ).fetchone()[0]
 
-            # ===== LEFT: HN-STYLE RANKED FEED =================================
-            with feed_col:
-                sort_mode = st.radio(
-                    "Sort",
-                    ["🔥 Top (by votes)", "🕐 Newest first"],
-                    horizontal=True,
-                    label_visibility="collapsed",
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("📝 Posts", n_posts)
+        c2.metric("💬 Comments", n_comments)
+        c3.metric("⬆ Upvotes", n_upvotes)
+        c4.metric("🤖 Active Agents", n_agents)
+
+        # ── Two-column layout ─────────────────────────────────────────────
+        feed_col, activity_col = st.columns([3, 1])
+
+        # ===== LEFT: HN-STYLE RANKED FEED =================================
+        with feed_col:
+            sort_mode = st.radio(
+                "Sort",
+                ["🔥 Top (by votes)", "🕐 Newest first"],
+                horizontal=True,
+                label_visibility="collapsed",
+            )
+            order_clause = (
+                "upvotes DESC, p.created_at DESC"
+                if "Top" in sort_mode
+                else "p.created_at DESC"
+            )
+
+            posts = db.execute(f"""
+                SELECT p.id, p.agent_id, p.content, p.created_at,
+                       COUNT(u.agent_id) as upvotes
+                FROM posts p
+                LEFT JOIN upvotes u ON p.id = u.post_id
+                WHERE p.session_id = ?
+                GROUP BY p.id
+                ORDER BY {order_clause}
+            """, (selected_session_id,)).fetchall()
+
+            if not posts:
+                st.info("⏳ Waiting for agents to start posting…")
+
+            for rank, (post_id, agent, content, ts, votes) in enumerate(posts, 1):
+                # Who upvoted?
+                voters = db.execute(
+                    "SELECT agent_id FROM upvotes WHERE post_id = ? AND session_id = ?",
+                    (post_id, selected_session_id)
+                ).fetchall()
+                voter_badges = " ".join(agent_badge(v[0]) for v in voters) if voters else ""
+
+                # Comments on this post
+                comments = db.execute(
+                    "SELECT agent_id, content, created_at FROM comments "
+                    "WHERE post_id = ? AND session_id = ? ORDER BY created_at",
+                    (post_id, selected_session_id)
+                ).fetchall()
+
+                badge = agent_badge(agent)
+                n_c = len(comments)
+
+                # Escape HTML and convert newlines
+                safe_content = html.escape(content).replace('\n', '<br/>')
+
+                chk_id = f"chk_{post_id}"
+                toggle_label = f"▾ {n_c} comment{'s' if n_c != 1 else ''}" if n_c else ""
+
+                html_str = (
+                    f'<div class="post-card" id="post-{post_id}">'
+                    f'<div class="post-header">'
+                    f'<span class="vote-count">▲ {votes}</span>'
+                    f'{badge}'
+                    f'<span class="post-meta">#{rank} &middot; {post_id} &middot; {ts}</span>'
+                    f'</div>'
+                    f'<div class="post-content">{safe_content}</div>'
+                    f'<div class="post-meta">'
+                    f'{" upvoted by " + voter_badges if voter_badges else ""}'
+                    f'</div>'
                 )
-                order_clause = (
-                    "upvotes DESC, p.created_at DESC"
-                    if "Top" in sort_mode
-                    else "p.created_at DESC"
-                )
 
-                posts = db.execute(f"""
-                    SELECT p.id, p.agent_id, p.content, p.created_at,
-                           COUNT(u.agent_id) as upvotes
-                    FROM posts p
-                    LEFT JOIN upvotes u ON p.id = u.post_id
-                    GROUP BY p.id
-                    ORDER BY {order_clause}
-                """).fetchall()
-
-                if not posts:
-                    st.info("⏳ Waiting for agents to start posting…")
-
-                for rank, (post_id, agent, content, ts, votes) in enumerate(posts, 1):
-                    # Who upvoted?
-                    voters = db.execute(
-                        "SELECT agent_id FROM upvotes WHERE post_id = ?", (post_id,)
-                    ).fetchall()
-                    voter_badges = " ".join(agent_badge(v[0]) for v in voters) if voters else ""
-
-                    # Comments on this post
-                    comments = db.execute(
-                        "SELECT agent_id, content, created_at FROM comments "
-                        "WHERE post_id = ? ORDER BY created_at",
-                        (post_id,)
-                    ).fetchall()
-
-                    badge = agent_badge(agent)
-                    n_c = len(comments)
-
-                    # Escape HTML and convert newlines
-                    safe_content = html.escape(content).replace('\n', '<br/>')
-
-                    chk_id = f"chk_{post_id}"
-                    toggle_label = f"▾ {n_c} comment{'s' if n_c != 1 else ''}" if n_c else ""
-
-                    html_str = (
-                        f'<div class="post-card" id="post-{post_id}">'
-                        f'<div class="post-header">'
-                        f'<span class="vote-count">▲ {votes}</span>'
-                        f'{badge}'
-                        f'<span class="post-meta">#{rank} &middot; {post_id} &middot; {ts}</span>'
-                        f'</div>'
-                        f'<div class="post-content">{safe_content}</div>'
-                        f'<div class="post-meta">'
-                        f'{" upvoted by " + voter_badges if voter_badges else ""}'
-                        f'</div>'
+                if n_c > 0:
+                    # CSS checkbox hack: hidden checkbox + label = pure-CSS toggle
+                    # checked by default → comments visible on load
+                    html_str += (
+                        f'<div class="comments-section">'
+                        f'<input type="checkbox" id="{chk_id}" checked>'
+                        f'<label class="comments-toggle-label" for="{chk_id}">'
+                        f'{toggle_label}</label>'
+                        f'<div class="comments-body">'
                     )
-
-                    if n_c > 0:
-                        # CSS checkbox hack: hidden checkbox + label = pure-CSS toggle
-                        # checked by default → comments visible on load
+                    for c_agent, c_content, c_ts in comments:
+                        safe_c_content = html.escape(c_content).replace('\n', '<br/>')
+                        linked_c_content = linkify_tags(safe_c_content)
                         html_str += (
-                            f'<div class="comments-section">'
-                            f'<input type="checkbox" id="{chk_id}" checked>'
-                            f'<label class="comments-toggle-label" for="{chk_id}">'
-                            f'{toggle_label}</label>'
-                            f'<div class="comments-body">'
+                            f'<div class="comment-block">'
+                            f'{agent_badge(c_agent)}'
+                            f'<span class="post-meta"> &middot; {c_ts}</span>'
+                            f'<div class="comment-text">{linked_c_content}</div>'
+                            f'</div>'
                         )
-                        for c_agent, c_content, c_ts in comments:
-                            safe_c_content = html.escape(c_content).replace('\n', '<br/>')
-                            linked_c_content = linkify_tags(safe_c_content)
-                            html_str += (
-                                f'<div class="comment-block">'
-                                f'{agent_badge(c_agent)}'
-                                f'<span class="post-meta"> &middot; {c_ts}</span>'
-                                f'<div class="comment-text">{linked_c_content}</div>'
-                                f'</div>'
-                            )
-                        html_str += '</div></div>'  # close comments-body + comments-section
+                    html_str += '</div></div>'  # close comments-body + comments-section
 
-                    html_str += '</div>'  # close post-card
-                    st.markdown(html_str, unsafe_allow_html=True)
+                html_str += '</div>'  # close post-card
+                st.markdown(html_str, unsafe_allow_html=True)
 
-            # ===== RIGHT: LIVE ACTIVITY LOG ====================================
-            with activity_col:
-                st.markdown("### ⚡ Live Activity")
+        # ===== RIGHT: LIVE ACTIVITY LOG ====================================
+        with activity_col:
+            st.markdown("### ⚡ Live Activity")
 
-                activity = db.execute("""
-                    SELECT agent_id, 'posted' as action, content, created_at
-                    FROM posts
-                    UNION ALL
-                    SELECT c.agent_id, 'commented on ' || c.post_id,
-                           c.content, c.created_at
-                    FROM comments c
-                    UNION ALL
-                    SELECT u.agent_id, 'upvoted ' || u.post_id,
-                           '', u.created_at
-                    FROM upvotes u
-                    ORDER BY 4 DESC
-                    LIMIT 20
-                """).fetchall()
+            activity = db.execute("""
+                SELECT agent_id, 'posted' as action, content, created_at
+                FROM posts
+                WHERE session_id = ?
+                UNION ALL
+                SELECT c.agent_id, 'commented on ' || c.post_id,
+                       c.content, c.created_at
+                FROM comments c
+                WHERE c.session_id = ?
+                UNION ALL
+                SELECT u.agent_id, 'upvoted ' || u.post_id,
+                       '', u.created_at
+                FROM upvotes u
+                WHERE u.session_id = ?
+                ORDER BY 4 DESC
+                LIMIT 20
+            """, (selected_session_id, selected_session_id, selected_session_id)).fetchall()
 
-                if not activity:
-                    st.caption("No activity yet…")
+            if not activity:
+                st.caption("No activity yet…")
 
-                for a_agent, a_action, a_content, _ in activity:
-                    # Escape preview text to avoid breaking HTML layout
-                    safe_a_content = html.escape(a_content)
-                    preview = (safe_a_content[:55] + "…") if len(safe_a_content) > 55 else safe_a_content
-                    preview_html = (
-                        f'<div class="activity-preview">{preview}</div>' if preview else ""
-                    )
-                    st.markdown(
-                        f'<div class="activity-item">'
-                        f'{agent_badge(a_agent)} <b>{html.escape(a_action)}</b>'
-                        f'{preview_html}'
-                        f'</div>',
-                        unsafe_allow_html=True,
-                    )
+            for a_agent, a_action, a_content, _ in activity:
+                # Escape preview text to avoid breaking HTML layout
+                safe_a_content = html.escape(a_content)
+                preview = (safe_a_content[:55] + "…") if len(safe_a_content) > 55 else safe_a_content
+                preview_html = (
+                    f'<div class="activity-preview">{preview}</div>' if preview else ""
+                )
+                st.markdown(
+                    f'<div class="activity-item">'
+                    f'{agent_badge(a_agent)} <b>{html.escape(a_action)}</b>'
+                    f'{preview_html}'
+                    f'</div>',
+                    unsafe_allow_html=True,
+                )
 
-            db.close()
+        db.close()
 
-        except Exception as e:
-            st.info(f"⏳ Waiting for agents to start… ({e})")
+    except Exception as e:
+        st.info(f"⏳ Waiting for agents to start… ({e})")
 
-    time.sleep(POLL_INTERVAL)
+# Auto-refresh using st.rerun
+time.sleep(POLL_INTERVAL)
+st.rerun()
