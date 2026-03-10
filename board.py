@@ -35,10 +35,24 @@ class Board:
             );
             CREATE TABLE IF NOT EXISTS upvotes (
                 session_id  TEXT REFERENCES sessions(id),
-                post_id     TEXT REFERENCES posts(id),
                 agent_id    TEXT NOT NULL,
                 created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 PRIMARY KEY (post_id, agent_id)
+            );
+            CREATE TABLE IF NOT EXISTS searches (
+                id          TEXT PRIMARY KEY,
+                session_id  TEXT REFERENCES sessions(id),
+                agent_id    TEXT NOT NULL,
+                query       TEXT NOT NULL,
+                created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+            CREATE TABLE IF NOT EXISTS intents (
+                session_id  TEXT REFERENCES sessions(id),
+                round_num   INTEGER NOT NULL,
+                agent_id    TEXT NOT NULL,
+                intent      TEXT NOT NULL,
+                created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (session_id, round_num, agent_id)
             );
             CREATE TABLE IF NOT EXISTS seen_posts (
                 session_id  TEXT REFERENCES sessions(id),
@@ -65,8 +79,24 @@ class Board:
             "INSERT INTO comments (id, session_id, post_id, agent_id, content) VALUES (?, ?, ?, ?, ?)",
             (comment_id, self.session_id, post_id, agent_id, content)
         )
-        await self.db.commit()
         return comment_id
+
+    async def create_search(self, agent_id: str, query: str) -> str:
+        search_id = str(uuid.uuid4())[:8]
+        await self.db.execute(
+            "INSERT INTO searches (id, session_id, agent_id, query) VALUES (?, ?, ?, ?)",
+            (search_id, self.session_id, agent_id, query)
+        )
+        await self.db.commit()
+        return search_id
+
+    async def register_intent(self, round_num: int, agent_id: str, intent: str):
+        """Phase 1: Record what the agent intends to do this round."""
+        await self.db.execute(
+            "INSERT OR REPLACE INTO intents (session_id, round_num, agent_id, intent) VALUES (?, ?, ?, ?)",
+            (self.session_id, round_num, agent_id, intent)
+        )
+        await self.db.commit()
 
     async def upvote(self, agent_id: str, post_id: str) -> bool:
         try:
@@ -91,7 +121,38 @@ class Board:
                 pass
         await self.db.commit()
 
+    async def check_consensus(self, threshold: int) -> bool:
+        """Check if any post in the session has reached the consensus threshold."""
+        cursor = await self.db.execute(
+            "SELECT COUNT(agent_id) as upvotes FROM upvotes WHERE session_id = ? "
+            "GROUP BY post_id ORDER BY upvotes DESC LIMIT 1",
+            (self.session_id,)
+        )
+        row = await cursor.fetchone()
+        return (row and row[0] >= threshold)
+
     # ── Reads ─────────────────────────────────────────────────────────────────
+
+    async def get_intents(self, round_num: int, exclude_agent: str = None) -> list[dict]:
+        """Phase 2: Read what other agents are planning to do right now."""
+        query = "SELECT agent_id, intent FROM intents WHERE session_id = ? AND round_num = ?"
+        params = [self.session_id, round_num]
+        
+        if exclude_agent:
+            query += " AND agent_id != ?"
+            params.append(exclude_agent)
+            
+        cursor = await self.db.execute(query, params)
+        return [{"agent_id": r[0], "intent": r[1]} for r in await cursor.fetchall()]
+
+    async def get_recent_searches(self, limit: int = 15) -> list[str]:
+        """Fetch the most recent specific queries searched by the swarm."""
+        cursor = await self.db.execute(
+            "SELECT DISTINCT query FROM searches WHERE session_id = ? "
+            "ORDER BY created_at DESC LIMIT ?",
+            (self.session_id, limit)
+        )
+        return [r[0] for r in await cursor.fetchall()]
 
     async def get_top_posts(self, limit: int = 5) -> list[dict]:
         """Posts ordered by upvote count descending."""
