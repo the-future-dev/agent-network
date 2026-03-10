@@ -18,7 +18,7 @@ class Config:
     explore_ratio: float = 0.4      # 40% unseen (novelty), 60% top (quality)
 
     # Tools
-    max_searches_per_agent: int = 2 # Prevent infinite research loops
+    max_searches_per_agent: int = 1 # Force extreme scarcity to drive collaboration
 
     # Output
     top_k: int = 3                  # Final results to surface
